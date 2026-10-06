@@ -11,17 +11,19 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
 
-DATA_PATH = os.path.join(os.path.dirname(__file__), "data", "tattoo_price_dataset_v3.csv")
+DATA_PATH = os.path.join(
+    os.path.dirname(__file__), "data", "tattoo_price_model_ready_v4.csv"
+)
 MODEL_PATH = os.path.join(
     os.path.dirname(__file__), "saved_models", "price_prediction_model.joblib"
 )
 
-NUMERICAL_FEATURES = ["size_sq_inches", "complexity_score"]
+NUMERICAL_FEATURES = ["area_sq_in", "complexity_score"]
 CATEGORICAL_FEATURES = [
     "country",
     "city",
-    "body_part",
-    "tattoo_style",
+    "placement",
+    "style",
     "color_type",
     "artist_level",
     "design_type",
@@ -33,46 +35,30 @@ def train_model() -> None:
     if not os.path.isfile(DATA_PATH):
         raise FileNotFoundError(
             f"Training dataset not found: {DATA_PATH}. "
-            "Add tattoo_price_dataset_v3.csv to ml/data before training."
+            "Run ml/preprocessing/prepare_dataset.py first."
         )
 
     data = pd.read_csv(DATA_PATH)
-    required_columns = {
-        "country",
-        "city",
-        "placement",
-        "style",
-        "area_sq_in",
-        "complexity_score",
-        "color_type",
-        "artist_level",
-        "design_type",
-        "price_usd",
-    }
+    required_columns = set(MODEL_FEATURES + ["price_usd"])
     missing_columns = required_columns.difference(data.columns)
     if missing_columns:
         raise ValueError(
             f"Training dataset is missing required columns: {sorted(missing_columns)}"
         )
 
-    training_data = data.rename(
-        columns={
-            "area_sq_in": "size_sq_inches",
-            "placement": "body_part",
-            "style": "tattoo_style",
-        }
-    )
-    training_data = training_data[MODEL_FEATURES + ["price_usd"]].copy()
+    training_data = data[MODEL_FEATURES + ["price_usd"]].copy()
     training_data["price_usd"] = pd.to_numeric(
         training_data["price_usd"], errors="coerce"
     )
     training_data = training_data.replace([np.inf, -np.inf], np.nan).dropna()
     training_data = training_data[training_data["price_usd"] > 0]
+
     if training_data.empty:
         raise ValueError("Training dataset has no valid positive USD prices.")
 
     features = training_data[MODEL_FEATURES]
     target = training_data["price_usd"]
+
     preprocessor = ColumnTransformer(
         transformers=[
             ("numeric", "passthrough", NUMERICAL_FEATURES),
@@ -83,14 +69,15 @@ def train_model() -> None:
             ),
         ]
     )
+
     model = Pipeline(
         steps=[
             ("preprocessor", preprocessor),
             (
                 "model",
                 RandomForestRegressor(
-                    n_estimators=120,
-                    min_samples_leaf=2,
+                    n_estimators=200,
+                    min_samples_leaf=3,
                     max_features=0.8,
                     n_jobs=-1,
                     random_state=42,
