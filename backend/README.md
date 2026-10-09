@@ -1,17 +1,11 @@
-# Backend image generation setup
+# Tattoo reference images
 
-Prompt-based tattoo image generation uses the [AI Horde](https://aihorde.net/) community service. It is free to use and this app submits requests anonymously, so no provider account, API token, or billing setup is required.
+Tattoo inspiration images are loaded from `C:\Users\Vikheyath R Bangera\Desktop\Reserch paper dataset\Tattoo_img_200`; labels are read from `C:\Users\Vikheyath R Bangera\Desktop\Reserch paper dataset\tattoo_200_image.csv`. The CSV must contain `image_name`, `complexity`, and `color` columns, with image names matching files in the image folder. The app displays six random labeled images when requested. Selecting one applies its complexity and color to the price-estimate inputs.
 
-Anonymous requests have the lowest queue priority. Generation can take a while or time out when the community queue is busy. The app requests one 512 x 512 image and waits up to three minutes for the result. Prompts are sent to a third-party community service; do not include private or sensitive information.
-
-The **Generate from prompt** action returns a tattoo concept for discussion with a tattoo artist, not stencil-ready artwork. The service and generated image URLs may be unavailable or temporary. For a no-cost alternative that does not send prompts to a hosted service, use **No preference** to browse the local reference dataset.
-
-The local **No preference** images are served from `dataset/Tattoo_img_200` at the project root. Set `TATTOO_IMAGE_DATASET` to use a different image directory. Leaving the prompt blank and selecting **Generate from prompt** also loads six random images from this local dataset.
+The image collection is a visual reference dataset, not training data for the price model. The price model is trained only on the price dataset below. The app does not generate images or fetch image-search results from third-party services. Set `TATTOO_IMAGE_DATASET` and `TATTOO_IMAGE_METADATA` to override the image folder and metadata CSV.
 
 ## Price prediction model
 
-Price predictions are produced in USD by the model trained from `ml/data/tattoo_price_dataset_v3.csv`. The matching `tattoo_price_model_ready_v3.csv` is included for reference; it contains the same 100,000 records with a reduced set of columns and is not concatenated during training. The source dataset labels its records `anchored_synthetic`, so predictions are estimates based on that data, not guaranteed studio quotes.
+Price predictions use the dataset at `C:\Users\Vikheyath R Bangera\Desktop\Reserch paper dataset\tattoo_price_training_india_100k_clean.csv` and are available for Indian cities only. The model is trained from that dataset and estimates are based on the available pricing records rather than guaranteed studio quotes. Prices are displayed in INR.
 
-To retrain after changing the training data, run `python ml/train.py` from the project root using the backend Python environment. The script evaluates a held-out split and writes `ml/saved_models/price_prediction_model.joblib`; restart the backend afterward to load the new model. The API converts size, placement, color, artist level, and design type into the model's training features. The main calculator converts the USD prediction to the selected display currency when exchange rates are available.
-
-See the [AI Horde API documentation](https://aihorde.net/api) and the [AI Horde integration guide](https://github.com/Haidra-Org/AI-Horde/blob/main/README_integration.md) for service details.
+To retrain after changing the training data, run `python ml/train.py` from the project root using the backend Python environment. The script evaluates a held-out split and writes `ml/saved_models/price_prediction_model.joblib`; restart the backend afterward to load the new model. The API converts size, placement, color, artist level, and design type into the model's training features.

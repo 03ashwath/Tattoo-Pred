@@ -1,5 +1,5 @@
 import React from 'react';
-import { currencyForCountry, formatCurrency, useUsdExchangeRates } from '@/lib/currency';
+import { formatInr, useUsdToInrRate } from '@/lib/currency';
 
 export type ResultsDashboardData = {
   price_prediction: {
@@ -49,45 +49,39 @@ export default function ResultsDashboard({ data }: { data: ResultsDashboardData 
     { name: "Sacred Geometry Ink", distance: "2.5 miles", rating: 4.9, address: `789 West Ave, ${displayCity}` }
   ];
 
-  const searchTerms = typeof data?.designText === 'string' ? data.designText.trim() : "tattoo";
-  const [generatedDesigns, setGeneratedDesigns] = React.useState<Array<{ id: number; url: string; title: string }>>(
-    Array.from({ length: 8 }).map((_, i) => ({
-      id: i + 1,
-      url: `https://loremflickr.com/500/500/tattoo,${encodeURIComponent(searchTerms.replace(/\s+/g, ','))}/all?random=${i}`,
-      title: `Loading Inspiration...`
-    }))
-  );
+  const [generatedDesigns, setGeneratedDesigns] = React.useState<Array<{ id: number; url: string; title: string }>>([]);
+  const [imageError, setImageError] = React.useState('');
 
   React.useEffect(() => {
     let isMounted = true;
     const fetchImages = async () => {
       try {
-        const query = encodeURIComponent(searchTerms);
-        const res = await fetch(`${API_BASE_URL}/api/images/search?q=${query}`);
-        const result = (await res.json()) as { images?: string[] };
-
-        if (isMounted && Array.isArray(result.images) && result.images.length > 0) {
-          setGeneratedDesigns(result.images.map((url: string, i: number) => ({
+        const response = await fetch(`${API_BASE_URL}/api/images/random`);
+        const result = await response.json() as { images?: unknown; detail?: string };
+        if (!response.ok) {
+          throw new Error(result.detail || `Image request failed with status ${response.status}.`);
+        }
+        if (!Array.isArray(result.images) || result.images.length !== 6 || !result.images.every((url): url is string => typeof url === 'string')) {
+          throw new Error('The local image dataset did not return six valid images.');
+        }
+        if (isMounted) {
+          setGeneratedDesigns(result.images.map((url, i) => ({
             id: i + 1,
             url,
             title: `Inspiration ${i + 1}`
           })));
         }
       } catch (err) {
-        console.error("Failed to fetch tattoo images", err);
+        console.error("Failed to load local tattoo images", err);
+        if (isMounted) setImageError('Local tattoo reference images are currently unavailable.');
       }
     };
     fetchImages();
     return () => { isMounted = false; };
-  }, [API_BASE_URL, searchTerms]);
+  }, [API_BASE_URL]);
 
   const [selectedDesign, setSelectedDesign] = React.useState<number | null>(null);
   const [viewedImage, setViewedImage] = React.useState<string | null>(null);
-  const { rates, isLoaded: areExchangeRatesLoaded, hasError: exchangeRatesFailed } = useUsdExchangeRates();
-  const currencyCode = currencyForCountry(data?.countryCode);
-  const hasCurrencyRate = currencyCode === 'USD' || typeof rates[currencyCode] === 'number';
-  const displayCurrencyCode = hasCurrencyRate ? currencyCode : 'USD';
-
   const inkSwatchColor = typeof data?.inkColor === 'string'
     ? (data.inkColor.startsWith('#')
         ? data.inkColor
@@ -100,10 +94,8 @@ export default function ResultsDashboard({ data }: { data: ResultsDashboardData 
               : 'currentColor')
     : 'currentColor';
 
-  const formatPrice = (val: number) => {
-    const converted = val * (displayCurrencyCode === 'USD' ? 1 : rates[displayCurrencyCode]);
-    return formatCurrency(converted, displayCurrencyCode);
-  };
+  const { rate: usdToInrRate, isLoaded: isExchangeRateLoaded, hasError: exchangeRateFailed } = useUsdToInrRate();
+  const formatPrice = (val: number) => formatInr(val, usdToInrRate);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700 text-left">
@@ -116,10 +108,11 @@ export default function ResultsDashboard({ data }: { data: ResultsDashboardData 
           </span>
           Tattoo Image Inspirations
         </h3>
-        <p className="text-slate-400 mb-6">Based on your description, here are some reference images fetched for your tattoo idea. Click on your favorite to proceed with it.</p>
+        <p className="text-slate-400 mb-6">Here are six random reference images from the local dataset. Click one to select it.</p>
+        {imageError && <p role="status" className="mb-4 text-sm text-amber-300">{imageError}</p>}
         
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {generatedDesigns.map((design, idx: number) => (
+          {generatedDesigns.map((design) => (
             <div
               key={design.id}
               className={`relative group rounded-xl overflow-hidden border-2 transition-all duration-300 ${selectedDesign === design.id ? 'border-purple-500 scale-105 shadow-lg shadow-purple-900/50' : 'border-transparent hover:border-slate-500'}`}
@@ -129,7 +122,7 @@ export default function ResultsDashboard({ data }: { data: ResultsDashboardData 
                 alt={design.title}
                 className="w-full h-48 object-cover cursor-pointer"
                 onClick={() => setSelectedDesign(design.id)}
-                onError={(e) => { const target = e.currentTarget as HTMLImageElement; target.src = `https://loremflickr.com/500/500/tattoo,art/all?random=${idx}`; }}
+                onError={() => setImageError('A local dataset image could not be loaded.')}
               />
 
               <button
@@ -167,13 +160,11 @@ export default function ResultsDashboard({ data }: { data: ResultsDashboardData 
             {formatPrice(price.predicted_price_min)} - {formatPrice(price.predicted_price_max)}
           </div>
           <p className="text-slate-400">Estimated Average: <span className="text-slate-200 font-bold">{formatPrice(price.predicted_price_mid)}</span></p>
-          {currencyCode !== displayCurrencyCode && (
+          {(exchangeRateFailed || !isExchangeRateLoaded) && (
             <p role="status" className="mt-2 text-xs text-amber-300">
-              {exchangeRatesFailed
-                ? `Live ${currencyCode} conversion is unavailable; showing USD instead.`
-                : !areExchangeRatesLoaded
-                  ? `Loading ${currencyCode} exchange rates; showing USD temporarily.`
-                  : `${currencyCode} rates are unavailable; showing USD instead.`}
+              {exchangeRateFailed
+                ? 'Approximate INR conversion is being used.'
+                : 'Loading the latest INR exchange rate.'}
             </p>
           )}
         </div>

@@ -10,8 +10,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 
-DATA_PATH = os.path.join(
-    os.path.dirname(__file__), "data", "tattoo_price_model_ready_v4.csv"
+DATA_PATH = os.getenv(
+    "TATTOO_PRICE_DATASET_READY",
+    r"C:\Users\Vikheyath R Bangera\Desktop\Reserch paper dataset\tattoo_price_training_india_100k_clean.csv",
+)
+ALT_DATA_PATH = os.getenv(
+    "TATTOO_PRICE_DATASET_RAW",
+    r"C:\Users\Vikheyath R Bangera\Desktop\Reserch paper dataset\tattoo_price_training_india_100k_clean.csv",
 )
 MODEL_PATH = os.path.join(
     os.path.dirname(__file__), "saved_models", "price_prediction_model.joblib"
@@ -37,16 +42,46 @@ def print_price_group_metrics(actual, predictions):
 
 def train_model() -> None:
     if not os.path.isfile(DATA_PATH):
-        raise FileNotFoundError(f"Training dataset not found: {DATA_PATH}. Run ml/preprocessing/prepare_dataset.py first.")
+        raise FileNotFoundError(f"Training dataset not found: {DATA_PATH}")
     data = pd.read_csv(DATA_PATH)
-    required_columns = set(MODEL_FEATURES + ["price_usd"])
-    missing_columns = required_columns.difference(data.columns)
-    if missing_columns:
-        raise ValueError(f"Training dataset is missing required columns: {sorted(missing_columns)}")
-    training_data = data[MODEL_FEATURES + ["price_usd"]].copy()
-    training_data["price_usd"] = pd.to_numeric(training_data["price_usd"], errors="coerce")
+
+    if {"price_usd"}.issubset(data.columns):
+        required_columns = set(MODEL_FEATURES + ["price_usd"])
+        missing_columns = required_columns.difference(data.columns)
+        if missing_columns:
+            raise ValueError(f"Training dataset is missing required columns: {sorted(missing_columns)}")
+        training_data = data[MODEL_FEATURES + ["price_usd"]].copy()
+    else:
+        size_to_placement = {
+            'tiny': 'Wrist',
+            'small': 'Wrist',
+            'medium': 'Forearm',
+            'large': 'Forearm',
+            'small-custom': 'Forearm',
+            'medium-custom': 'Forearm',
+            'large-standalone': 'Forearm',
+            'half-sleeve': 'Half Sleeve',
+            'full-sleeve': 'Full Sleeve',
+            'full-back': 'Back',
+        }
+        complexity_map = {'Simple': 1, 'Medium': 2, 'Complex': 3, 'Intricate': 4}
+        training_data = pd.DataFrame({
+            'area_sq_in': pd.to_numeric(data['area_sq_in'], errors='coerce'),
+            'country': 'India',
+            'city': data['city'].astype('string').str.strip(),
+            'placement': data['size_id'].map(size_to_placement).fillna('Forearm'),
+            'style': np.where(data['color'].astype('string').str.contains('Gray|Black', case=False, na=False), 'Blackwork', 'Realism'),
+            'complexity_score': data['complexity'].map(complexity_map).fillna(2),
+            'color_type': np.where(data['color'].astype('string').str.contains('Gray|Black', case=False, na=False), 'Black and grey', 'Color'),
+            'artist_level': 'Established',
+            'design_type': np.where(data['size_id'].astype('string').str.contains('custom|standalone', case=False, na=False), 'Custom design', 'Flash design'),
+            'price_usd': pd.to_numeric(data['price_inr'], errors='coerce') / 83.0,
+        })
+        training_data = training_data[MODEL_FEATURES + ['price_usd']].copy()
+
+    training_data['price_usd'] = pd.to_numeric(training_data['price_usd'], errors='coerce')
     training_data = training_data.replace([np.inf, -np.inf], np.nan).dropna()
-    training_data = training_data[training_data["price_usd"] > 0]
+    training_data = training_data[training_data['price_usd'] > 0]
     if training_data.empty:
         raise ValueError("Training dataset has no valid positive USD prices.")
     features = training_data[MODEL_FEATURES]

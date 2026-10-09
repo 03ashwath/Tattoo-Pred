@@ -37,6 +37,9 @@ Thumbs.db
 
 # Large optional dataset downloads
 dataset/Tattoo_image_500/
+dataset/Tattoo_img_200/
+ml/data/tattoo_200_image.csv
+ml/data/tattoo_price_training_india_100k_clean.csv
 *.zip
 
 # Model artifacts (optional local cache)

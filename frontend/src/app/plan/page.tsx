@@ -3,53 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import ResultsDashboard, { type ResultsDashboardData } from '@/components/ResultsDashboard';
-
-const DATASET_LOCATIONS = [
-  { city: 'Austin', country: 'USA' },
-  { city: 'Bengaluru', country: 'India' },
-  { city: 'Chennai', country: 'India' },
-  { city: 'Chicago', country: 'USA' },
-  { city: 'Hyderabad', country: 'India' },
-  { city: 'Kochi', country: 'India' },
-  { city: 'Kolkata', country: 'India' },
-  { city: 'London', country: 'UK' },
-  { city: 'Los Angeles', country: 'USA' },
-  { city: 'Mangaluru', country: 'India' },
-  { city: 'Melbourne', country: 'Australia' },
-  { city: 'Miami', country: 'USA' },
-  { city: 'Mumbai', country: 'India' },
-  { city: 'New Delhi', country: 'India' },
-  { city: 'New York', country: 'USA' },
-  { city: 'Other UK', country: 'UK' },
-  { city: 'Pune', country: 'India' },
-  { city: 'San Francisco', country: 'USA' },
-  { city: 'Sydney', country: 'Australia' },
-  { city: 'United States Average', country: 'USA' },
-];
-
-const CITY_ALIASES: Record<string, string[]> = {
-  Mangaluru: ['Mangalore'],
-  Bengaluru: ['Bangalore'],
-};
-
-const COUNTRY_CODES: Record<string, string> = {
-  australia: 'AU',
-  au: 'AU',
-  india: 'IN',
-  in: 'IN',
-  uk: 'GB',
-  gb: 'GB',
-  'united kingdom': 'GB',
-  usa: 'US',
-  us: 'US',
-  'united states': 'US',
-};
-
-const DATASET_COUNTRIES = [...new Set(DATASET_LOCATIONS.map(({ country }) => country))];
-
-function countryCodeForLocation(country: string): string {
-  return COUNTRY_CODES[country.trim().toLowerCase()] ?? '';
-}
+import { INDIAN_CITIES, INDIAN_CITY_ALIASES, resolveIndianCity } from '@/lib/indian-cities';
 
 export default function PlanPage() {
   const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001';
@@ -64,41 +18,29 @@ export default function PlanPage() {
     sizeCategory: 'Medium',
     customSize: '',
     bodyPart: '',
-    country: '',
+    country: 'India',
     city: '',
-    countryCode: '',
+    countryCode: 'IN',
   });
 
   const [showResults, setShowResults] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [locationStatus, setLocationStatus] = useState('');
   const [resultsData, setResultsData] = useState<ResultsDashboardData | null>(null);
-  const selectedDatasetCountry = DATASET_COUNTRIES.find(
-    (country) => country.toLowerCase() === formData.country.trim().toLowerCase()
-  );
-  const citySuggestions = selectedDatasetCountry
-    ? DATASET_LOCATIONS.filter(({ country }) => country === selectedDatasetCountry)
-    : DATASET_LOCATIONS;
-  const cityOptions = citySuggestions.flatMap(({ city }) => [
-    city,
-    ...(CITY_ALIASES[city] ?? []),
-  ]);
+  const cityOptions = [...INDIAN_CITIES, ...Object.keys(INDIAN_CITY_ALIASES)];
 
   const fetchResults = async () => {
     setIsLoading(true);
     try {
       const sizeMapping: Record<string, number> = { 'Small': 5, 'Medium': 15, 'Large': 40, 'Custom': 20 };
       
-      // Map real-world locations to dataset categories for the model
-      let modelCountry = 'US';
-      const cLower = (formData.country || '').toLowerCase();
-      const modelCity = formData.city || 'New York';
-
-      if (cLower.includes('india') || cLower === 'in') {
-        modelCountry = 'IN';
-      } else if (cLower.includes('kingdom') || cLower === 'uk') {
-        modelCountry = 'UK';
-      } else if (cLower.includes('australia') || cLower === 'au') {
-        modelCountry = 'AU';
+      const modelCountry = 'IN';
+      const enteredCity = formData.city.trim();
+      const modelCity = resolveIndianCity(enteredCity) ?? enteredCity;
+      if (!modelCity) {
+        window.alert('Enter or select an Indian city before continuing.');
+        setIsLoading(false);
+        return;
       }
 
       const isColor = formData.inkColor === 'Colour' ? 1 : 0;
@@ -122,7 +64,11 @@ export default function PlanPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const priceData: ResultsDashboardData['price_prediction'] = await res.json();
+      const responseData = await res.json() as ResultsDashboardData['price_prediction'] & { detail?: string };
+      if (!res.ok) {
+        throw new Error(responseData.detail || 'Unable to estimate the tattoo price.');
+      }
+      const priceData: ResultsDashboardData['price_prediction'] = responseData;
 
       setResultsData({
         price_prediction: priceData,
@@ -137,7 +83,7 @@ export default function PlanPage() {
         designText: formData.designType === 'text' && formData.designText.trim() ? formData.designText : `${formData.inkColor !== 'No Preference' ? formData.inkColor + ' ' : ''}${formData.sizeCategory} tattoo design`,
         city: formData.city,
         country: formData.country,
-        countryCode: formData.countryCode || countryCodeForLocation(formData.country),
+        countryCode: 'IN',
         skinTone: formData.skinTone,
         inkColor: formData.inkColor,
         inkBrand: formData.inkBrand,
@@ -152,10 +98,10 @@ export default function PlanPage() {
           predicted_price_mid: 350.50,
           predicted_price_min: 290.00,
           predicted_price_max: 410.00,
-          factors: ["Style: Realism", "Size: 15 sq inches", "Complexity Level: 8/10", `Location: ${formData.city}, ${formData.country}`]
+          factors: ["Size: 15 sq inches", "Complexity Level: 8/10", `Location: ${formData.city}, India`]
         },
         health_assessment: { category: "Lower concern", factors: [], explanation: "Fallback", sources: [] },
-        designText: formData.designType === 'text' && formData.designText.trim() ? formData.designText : `${formData.inkColor !== 'No Preference' ? formData.inkColor + ' ' : ''}${formData.sizeCategory} tattoo design`, city: formData.city, country: formData.country, countryCode: formData.countryCode || countryCodeForLocation(formData.country), skinTone: formData.skinTone, inkColor: formData.inkColor, sizeCategory: formData.sizeCategory
+        designText: formData.designType === 'text' && formData.designText.trim() ? formData.designText : `${formData.inkColor !== 'No Preference' ? formData.inkColor + ' ' : ''}${formData.sizeCategory} tattoo design`, city: formData.city, country: 'India', countryCode: 'IN', skinTone: formData.skinTone, inkColor: formData.inkColor, sizeCategory: formData.sizeCategory
       });
       setShowResults(true);
     }
@@ -309,7 +255,7 @@ export default function PlanPage() {
                {/* Placeholders for AI Generate options */}
                {formData.designType === 'none' && (
                  <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
-                   <p className="text-slate-300">We will ask you some questions about your style and use AI to generate concepts for you!</p>
+                   <p className="text-slate-300">Continue with a general tattoo reference; you can add a visual reference image later.</p>
                  </div>
                )}
              </div>
@@ -384,33 +330,42 @@ export default function PlanPage() {
 
                <div>
                  <h3 className="text-xl font-bold text-slate-200 mb-4">Your Location</h3>
-                 <p className="text-slate-400 mb-4 text-sm">Enter a city or region and country, choose from locations in our pricing dataset, or use GPS to fill in your current location.</p>
+                 <p className="text-slate-400 mb-4 text-sm">Choose or enter any Indian city or town. GPS can detect your current location in India.</p>
                  <button 
                    onClick={() => {
                      if (navigator.geolocation) {
+                       setLocationStatus('Finding your current location...');
                        navigator.geolocation.getCurrentPosition(async (position) => {
                          try {
                            const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${position.coords.latitude}&longitude=${position.coords.longitude}&localityLanguage=en`);
-                           if (!res.ok) throw new Error("Network response was not ok");
-                           const data = await res.json();
-                           if (data) {
+                           if (!res.ok) throw new Error(`Location lookup failed with HTTP ${res.status}.`);
+                           const data = await res.json() as { city?: string; locality?: string; countryCode?: string };
+                           if (data.countryCode?.toUpperCase() !== 'IN') {
+                             setLocationStatus('GPS location must be in India. Enter an Indian city instead.');
+                           } else {
+                             const city = data.city?.trim() || data.locality?.trim();
+                             if (!city) {
+                               setLocationStatus('Could not identify your city. Enter it manually.');
+                               return;
+                             }
                              setFormData(d => ({ 
                                ...d, 
-                               city: data.city || data.locality || '', 
-                               country: data.countryName || '',
-                               countryCode: data.countryCode || ''
+                               city,
+                               country: 'India',
+                               countryCode: 'IN'
                              }));
+                             setLocationStatus(`Using your current location: ${city}, India.`);
                            }
                          } catch(e) { 
                            console.error("GPS Error:", e); 
-                           alert("Failed to fetch location details from GPS. Please enter manually.");
+                           setLocationStatus('Could not look up your GPS location. Enter an Indian city instead.');
                          }
                        }, (error) => {
                          console.error("Geolocation Error:", error);
-                         alert("GPS tracking failed: " + error.message);
+                         setLocationStatus(`GPS location failed: ${error.message}`);
                        });
                      } else {
-                       alert("Geolocation is not supported by this browser.");
+                       setLocationStatus('GPS location is not supported by this browser.');
                      }
                    }}
                    className="mb-6 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg flex items-center transition-colors"
@@ -418,49 +373,21 @@ export default function PlanPage() {
                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                    Use My GPS Location
                  </button>
+                 {locationStatus && <p role="status" className="mb-4 text-sm text-slate-300">{locationStatus}</p>}
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <div>
-                     <label className="block text-slate-300 mb-2 font-medium">Country or region</label>
-                     <input 
-                       type="text"
-                       list="dataset-countries"
-                       placeholder="e.g. India"
-                       className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-slate-200 focus:ring-2 focus:ring-purple-500 focus:outline-none"
-                       value={formData.country}
-                       onChange={(e) => setFormData(d => ({
-                         ...d,
-                         country: e.target.value,
-                         countryCode: countryCodeForLocation(e.target.value),
-                       }))}
-                     />
-                     <datalist id="dataset-countries">
-                       {DATASET_COUNTRIES.map((country) => <option key={country} value={country} />)}
-                     </datalist>
+                     <span className="block text-slate-300 mb-2 font-medium">Country</span>
+                     <div className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-slate-200">India</div>
                    </div>
                    <div>
-                     <label className="block text-slate-300 mb-2 font-medium">City or region</label>
+                     <label className="block text-slate-300 mb-2 font-medium">Indian city or town</label>
                      <input 
                        type="text"
                        list="dataset-cities"
-                       placeholder="Search a city or region"
+                       placeholder="Search or enter an Indian city"
                        className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-slate-200 focus:ring-2 focus:ring-purple-500 focus:outline-none"
                        value={formData.city}
-                       onChange={(e) => {
-                         const city = e.target.value;
-                         const datasetLocation = DATASET_LOCATIONS.find(
-                           (location) => [location.city, ...(CITY_ALIASES[location.city] ?? [])]
-                             .some((name) => name.toLowerCase() === city.trim().toLowerCase())
-                         );
-                         const resolvedCity = datasetLocation?.city ?? city;
-                         setFormData(d => ({
-                           ...d,
-                           city: resolvedCity,
-                           country: datasetLocation?.country ?? d.country,
-                           countryCode: datasetLocation
-                             ? countryCodeForLocation(datasetLocation.country)
-                             : d.countryCode,
-                         }));
-                       }}
+                       onChange={(e) => setFormData(d => ({ ...d, city: e.target.value, country: 'India', countryCode: 'IN' }))}
                      />
                      <datalist id="dataset-cities">
                        {cityOptions.map((city) => <option key={city} value={city} />)}
